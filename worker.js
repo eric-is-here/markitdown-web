@@ -4,6 +4,7 @@
    ========================================================================== */
 
 const PYODIDE_INDEX_URL = "https://cdn.jsdelivr.net/pyodide/v0.27.4/full/";
+const MARKITDOWN_WHEEL_URL = "https://files.pythonhosted.org/packages/9f/b3/6138d2b23d5b534b0fa3736987a2e11bcef5419cbc9286c8afd229d21558/markitdown-0.1.4-py3-none-any.whl";
 importScripts(`${PYODIDE_INDEX_URL}pyodide.js`);
 
 const UNSUPPORTED_MEDIA_EXTENSIONS = new Set([
@@ -300,26 +301,29 @@ async function initializeRuntime(initialLlmConfig) {
 
     // Load pre-built WASM packages needed by micropip and office parsers
     postStatus("installing_parsers", "Installing document parsers...", 40);
-    await pyodide.loadPackage(["micropip", "lxml", "pillow", "pandas"]);
+    await pyodide.loadPackage(["micropip", "lxml", "pillow", "pandas", "cryptography", "beautifulsoup4", "requests"]);
 
-    // Stage 2: Manually install pure-Python dependencies & markitdown (deps=False)
+    // Stage 2: Install parsers and their dependencies, then load the pinned MarkItDown wheel directly.
     await pyodide.runPythonAsync(`
 import micropip
 
-await micropip.install([
-    "beautifulsoup4",
+_packages = [
     "markdownify",
     "pdfminer.six",
     "python-docx",
     "python-pptx",
     "openpyxl",
     "mammoth",
-    "charset-normalizer",
     "defusedxml",
-    "requests",
-])
-await micropip.install("markitdown", deps=False)
+]
+
+for _pkg in _packages:
+    try:
+        await micropip.install(_pkg)
+    except Exception as _e:
+        raise RuntimeError(f"Could not install {_pkg}: {_e}") from _e
 `);
+    await pyodide.loadPackage(MARKITDOWN_WHEEL_URL);
 
     // Stage 3: Register magika shim and initialize MarkItDown engine
     postStatus("initializing_engine", "Initializing MarkItDown engine...", 85);
